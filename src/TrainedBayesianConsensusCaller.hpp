@@ -11,14 +11,15 @@ developed by Jordan Eizenga at UCSC.
 #include "ConsensusCaller.hpp"
 
 #include <cmath>
-#include <cassert>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <map>
 
+#include "CZI_ASSERT.hpp"
 #include "tuple.hpp"
 #include "vector.hpp"
+#include "string.hpp"
 
 namespace ChanZuckerberg {
     namespace shasta {
@@ -39,6 +40,14 @@ public:
     // Function that does the computation for a given alignment position.
     // The Coverage object contains all the necessary information.
     virtual Consensus operator()(const Coverage&) const;
+    
+    // Compute the maximum likelihood consensus call, and return it along with
+    // an estimate of the probability that it is correct.
+    pair<Consensus, double> maximumAPosteriori(const Coverage&) const;
+    
+    // Compute the entire posterior distribution of consensus homopolymers.
+    // Returns a vector of pairs of (consensus, probability).
+    vector<pair<Consensus, double>> posteriorDistribution(const Coverage&) const;
 
 private:
     

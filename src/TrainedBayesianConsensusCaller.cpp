@@ -19,7 +19,7 @@ TrainedBayesianConsensusCaller::TrainedBayesianConsensusCaller()
 {
     std::ifstream trainedDistributionFile(trainedDistributionFilepath);
     
-    std::string line;
+    string line;
     
     // Load the header line and ignore it
     std::getline(trainedDistributionFile, line);
@@ -33,33 +33,33 @@ TrainedBayesianConsensusCaller::TrainedBayesianConsensusCaller()
         line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
         
         // Tokenize the line by tabs
-        std::stringstream strm(line);
-        vector<std::string> tokens;
-        std::string buffer;
+        stringstream strm(line);
+        vector<string> tokens;
+        string buffer;
         while (std::getline(strm, buffer, '\t')) {
             buffer.erase(std::remove(buffer.begin(), buffer.end(), '\t'), buffer.end());
             tokens.push_back(buffer);
         }
         
         // Parse tokens and verify that data matches expected format
-        assert(tokens.size() == 5);
+        CZI_ASSERT(tokens.size() == 5);
         
         size_t parsed_size = 0;
         
         AlignedBase calledBase = AlignedBase::fromCharacter(tokens[0].front());
-        assert(tokens[0].size() == 1);
+        CZI_ASSERT(tokens[0].size() == 1);
         
         size_t calledRepeatCount = std::stoull(tokens[1], &parsed_size);
-        assert(parsed_size == tokens[1].size());
+        CZI_ASSERT(parsed_size == tokens[1].size());
         
         AlignedBase trueBase = AlignedBase::fromCharacter(tokens[2].front());
-        assert(tokens[2].size() == 1);
+        CZI_ASSERT(tokens[2].size() == 1);
         
         size_t trueRepeatCount = std::stoull(tokens[3], &parsed_size);
-        assert(parsed_size == tokens[3].size());
+        CZI_ASSERT(parsed_size == tokens[3].size());
         
         double probability = std::stod(tokens[4], &parsed_size);
-        assert(parsed_size == tokens[4].size());
+        CZI_ASSERT(parsed_size == tokens[4].size());
         
         maxRepeatCount = std::max(std::max(calledRepeatCount, trueRepeatCount), maxRepeatCount);
         
@@ -96,15 +96,14 @@ TrainedBayesianConsensusCaller::TrainedBayesianConsensusCaller()
     }
 }
 
-
-
-Consensus TrainedBayesianConsensusCaller::operator()(
-    const Coverage& coverage) const
+vector<pair<Consensus, double>> TrainedBayesianConsensusCaller:posteriorDistribution(
+    const Coverage&) const
 {
-
-    // Initialize the return value
+    // We will build the posterior here
+    vector<pair<Consensus, double>> posterior;
+    posterior.reserve(repeatBases.size());
+    
     double maxLogLikelihood = std::numeric_limits<double>::lowest();
-    Consensus consensus;
     
     // Check likelihood for each possible consensus call
     for (const Consensus& trueRepeatBase : repeatBases) {
@@ -130,12 +129,47 @@ Consensus TrainedBayesianConsensusCaller::operator()(
                                                                        trueRepeatBase.repeatCount));
         }
         
+        // Put the unnormalized log-likelihood in the postrior for now
+        posterior.emplace_back(trueRepeatBase, logLikelihood);
+        
         // Identify the maximum likelihood consensus
         if (logLikelihood > maxLogLikelihood) {
             maxLogLikelihood = logLikelihood;
-            consensus = trueRepeatBase;
         }
     }
     
-    return consensus;
+    // Convert out of log-transformed values in place
+    double total = 0.0;
+    for (pair<Consensus, double>& entry : posterior) {
+        // Normalize so that the maximum log value is 0.0 to avoid numerical problems
+        entry.second = exp(entry.second - maxLogLikelihood);
+        total += entry.second;
+    }
+    
+    // Normalize to 1.0 in place
+    for (pair<Consensus, double>& entry : posterior) {
+        // Normalize so that the maximum log value is 0.0 to avoid numerical problems
+        entry.second /= total;
+    }
+    
+    return std::move(posterior);
+}
+
+pair<Consensus, double> TrainedBayesianConsensusCaller::maximumAPosteriori(
+    const Coverage&) const
+{
+    // Compute the whole posterior
+    vector<pair<Consensus, double>> posterior = posteriorDistribution(coverage);
+    // But just return the maximum likelihood element
+    return *std::max_element(posterior.begin(), posterior.end(),
+                             [](const pair<Consensus, double>& a, const pair<Consensus, double>& b) {
+                                 return a.second < b.second;
+                             });
+}
+
+
+Consensus TrainedBayesianConsensusCaller::operator()(
+    const Coverage& coverage) const
+{
+    return maximumAPosteriori(coverage).first;
 }
